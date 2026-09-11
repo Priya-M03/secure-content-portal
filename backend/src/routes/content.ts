@@ -5,12 +5,15 @@ import {
   NextFunction,
 } from "express";
 import multer from "multer";
-import path from "path";
-import fs from "fs";
 import crypto from "crypto";
+import { Readable } from "stream";
+
 import Content from "../models/Content";
+import { supabase } from "../supabase";
 
 const router = Router();
+
+const BUCKET_NAME = "content";
 
 // --------------------------------------------------
 // Authentication helpers
@@ -56,31 +59,6 @@ function requireAdmin(
 // Upload configuration
 // --------------------------------------------------
 
-const uploadDirectory = path.join(
-  process.cwd(),
-  "uploads"
-);
-
-if (!fs.existsSync(uploadDirectory)) {
-  fs.mkdirSync(uploadDirectory, {
-    recursive: true,
-  });
-}
-
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    cb(null, uploadDirectory);
-  },
-
-  filename: (_req, file, cb) => {
-    const uniqueName =
-      crypto.randomUUID() +
-      path.extname(file.originalname);
-
-    cb(null, uniqueName);
-  },
-});
-
 const allowedMimeTypes = [
   "video/mp4",
   "video/webm",
@@ -90,7 +68,7 @@ const allowedMimeTypes = [
 ];
 
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
 
   limits: {
     fileSize: 100 * 1024 * 1024,
@@ -156,82 +134,77 @@ router.get(
         });
       }
 
-      // Resolve the stored file safely
-      const filePath = path.resolve(
-        uploadDirectory,
-        content.storedName
-      );
-
-      const safeDirectory =
-        path.resolve(uploadDirectory) + path.sep;
-
-      // Prevent path traversal
-      if (!filePath.startsWith(safeDirectory)) {
-        return res.status(403).json({
-          message: "Invalid content path.",
-        });
-      }
-
-      if (!fs.existsSync(filePath)) {
-        return res.status(404).json({
-          message: "Stored file not found.",
-        });
-      }
-
-      const stat = fs.statSync(filePath);
-      const fileSize = stat.size;
-
       // ------------------------------------------------
       // SECURITY HEADERS
       // ------------------------------------------------
 
-      // Do not cache protected files
       res.setHeader(
         "Cache-Control",
         "private, no-store, max-age=0, must-revalidate"
       );
 
-      // Prevent MIME sniffing
       res.setHeader(
         "X-Content-Type-Options",
         "nosniff"
       );
 
-      // Allow authenticated resources to be embedded
-      // by the frontend running on localhost:5176.
       res.setHeader(
         "Cross-Origin-Resource-Policy",
         "cross-origin"
       );
 
-      // Helmet can otherwise send SAMEORIGIN,
-      // which blocks our PDF/HTML iframe because
-      // frontend and backend use different ports.
       res.removeHeader("X-Frame-Options");
 
-      // Allow this protected resource to be framed
-      // by our frontend.
       res.setHeader(
         "Content-Security-Policy",
         "frame-ancestors http://localhost:5176"
       );
 
       // ------------------------------------------------
+      // Create a short-lived signed URL
+      // ------------------------------------------------
+
+      const { data, error } =
+        await supabase.storage
+          .from(BUCKET_NAME)
+          .createSignedUrl(
+            content.storedName,
+            60
+          );
+
+      if (error || !data?.signedUrl) {
+        console.error(
+          "Supabase signed URL error:",
+          error
+        );
+
+        return res.status(500).json({
+          message: "Unable to access protected content.",
+        });
+      }
+
+      // ------------------------------------------------
+      // Fetch the private file through Supabase
+      // ------------------------------------------------
+
+      const fileResponse = await fetch(
+        data.signedUrl
+      );
+
+      if (!fileResponse.ok) {
+        return res.status(404).json({
+          message: "Stored file not found.",
+        });
+      }
+
+      // ------------------------------------------------
       // VIDEO
-      // HTTP Range support
       // ------------------------------------------------
 
       if (content.type === "VIDEO") {
-        const range = req.headers.range;
-
         res.setHeader(
           "Content-Type",
           content.mimeType
-        );
-
-        res.setHeader(
-          "Accept-Ranges",
-          "bytes"
         );
 
         res.setHeader(
@@ -239,101 +212,21 @@ router.get(
           "inline"
         );
 
-        // Browser requests the complete file
-        if (!range) {
-          res.setHeader(
-            "Content-Length",
-            fileSize
-          );
+        res.setHeader(
+          "Accept-Ranges",
+          "bytes"
+        );
 
-          return fs
-            .createReadStream(filePath)
-            .pipe(res);
-        }
-
-        // Example:
-        // bytes=0-1023
-        // bytes=1000-
-        const match =
-          /bytes=(\d*)-(\d*)/.exec(range);
-
-        if (!match) {
-          res.setHeader(
-            "Content-Range",
-            `bytes */${fileSize}`
-          );
-
-          return res.status(416).end();
-        }
-
-        let start = match[1]
-          ? Number(match[1])
-          : 0;
-
-        let end = match[2]
-          ? Number(match[2])
-          : fileSize - 1;
-
-        // Support suffix ranges:
-        // bytes=-500
-        if (!match[1] && match[2]) {
-          const suffixLength = Number(match[2]);
-
-          if (
-            suffixLength <= 0 ||
-            suffixLength > fileSize
-          ) {
-            res.setHeader(
-              "Content-Range",
-              `bytes */${fileSize}`
+        if (fileResponse.body) {
+          const nodeStream =
+            Readable.fromWeb(
+              fileResponse.body as any
             );
 
-            return res.status(416).end();
-          }
-
-          start = fileSize - suffixLength;
-          end = fileSize - 1;
+          return nodeStream.pipe(res);
         }
 
-        end = Math.min(
-          end,
-          fileSize - 1
-        );
-
-        if (
-          start < 0 ||
-          start >= fileSize ||
-          start > end
-        ) {
-          res.setHeader(
-            "Content-Range",
-            `bytes */${fileSize}`
-          );
-
-          return res.status(416).end();
-        }
-
-        const chunkSize =
-          end - start + 1;
-
-        res.status(206);
-
-        res.setHeader(
-          "Content-Range",
-          `bytes ${start}-${end}/${fileSize}`
-        );
-
-        res.setHeader(
-          "Content-Length",
-          chunkSize
-        );
-
-        return fs
-          .createReadStream(filePath, {
-            start,
-            end,
-          })
-          .pipe(res);
+        return res.status(500).end();
       }
 
       // ------------------------------------------------
@@ -351,14 +244,17 @@ router.get(
           "inline"
         );
 
+        const buffer =
+          Buffer.from(
+            await fileResponse.arrayBuffer()
+          );
+
         res.setHeader(
           "Content-Length",
-          fileSize
+          buffer.length
         );
 
-        return fs
-          .createReadStream(filePath)
-          .pipe(res);
+        return res.send(buffer);
       }
 
       // ------------------------------------------------
@@ -376,14 +272,17 @@ router.get(
           "inline"
         );
 
+        const buffer =
+          Buffer.from(
+            await fileResponse.arrayBuffer()
+          );
+
         res.setHeader(
           "Content-Length",
-          fileSize
+          buffer.length
         );
 
-        return fs
-          .createReadStream(filePath)
-          .pipe(res);
+        return res.send(buffer);
       }
 
       return res.status(400).json({
@@ -427,8 +326,6 @@ router.post(
       } = req.body;
 
       if (!title || !title.trim()) {
-        fs.unlinkSync(req.file.path);
-
         return res.status(400).json({
           message: "Title is required.",
         });
@@ -452,44 +349,91 @@ router.post(
       ) {
         type = "HTML";
       } else {
-        fs.unlinkSync(req.file.path);
-
         return res.status(400).json({
           message: "Unsupported file type.",
         });
       }
 
+      // ------------------------------------------------
+      // Generate random storage name
+      // ------------------------------------------------
+
+      const extension =
+        req.file.originalname.includes(".")
+          ? "." +
+            req.file.originalname
+              .split(".")
+              .pop()
+          : "";
+
+      const storedName =
+        `${crypto.randomUUID()}${extension}`;
+
+      // ------------------------------------------------
+      // Upload to private Supabase bucket
+      // ------------------------------------------------
+
+      const { error: uploadError } =
+        await supabase.storage
+          .from(BUCKET_NAME)
+          .upload(
+            storedName,
+            req.file.buffer,
+            {
+              contentType:
+                req.file.mimetype,
+
+              upsert: false,
+            }
+          );
+
+      if (uploadError) {
+        console.error(
+          "Supabase upload error:",
+          uploadError
+        );
+
+        return res.status(500).json({
+          message:
+            "Unable to upload file to storage.",
+        });
+      }
+
       const user = req.user as any;
 
-      const content = await Content.create({
-        title: title.trim(),
+      // ------------------------------------------------
+      // Save metadata in MongoDB
+      // ------------------------------------------------
 
-        description:
-          description?.trim() || "",
+      const content =
+        await Content.create({
+          title: title.trim(),
 
-        category:
-          category?.trim() || "",
+          description:
+            description?.trim() || "",
 
-        tag:
-          tag?.trim() || "",
+          category:
+            category?.trim() || "",
 
-        type,
+          tag:
+            tag?.trim() || "",
 
-        originalName:
-          req.file.originalname,
+          type,
 
-        storedName:
-          req.file.filename,
+          originalName:
+            req.file.originalname,
 
-        mimeType:
-          req.file.mimetype,
+          storedName,
 
-        size:
-          req.file.size,
+          mimeType:
+            req.file.mimetype,
 
-        uploadedBy:
-          user._id,
-      });
+          size:
+            req.file.size,
+
+          uploadedBy:
+            user._id,
+        });
 
       return res.status(201).json(content);
     } catch (error) {
@@ -497,13 +441,6 @@ router.post(
         "Upload content error:",
         error
       );
-
-      if (
-        req.file &&
-        fs.existsSync(req.file.path)
-      ) {
-        fs.unlinkSync(req.file.path);
-      }
 
       return res.status(500).json({
         message: "Unable to upload content",
@@ -597,14 +534,27 @@ router.delete(
         });
       }
 
-      const filePath = path.join(
-        uploadDirectory,
-        content.storedName
-      );
+      // ------------------------------------------------
+      // Delete file from Supabase Storage
+      // ------------------------------------------------
 
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
+      const { error: deleteError } =
+        await supabase.storage
+          .from(BUCKET_NAME)
+          .remove([
+            content.storedName,
+          ]);
+
+      if (deleteError) {
+        console.error(
+          "Supabase delete error:",
+          deleteError
+        );
       }
+
+      // ------------------------------------------------
+      // Delete metadata from MongoDB
+      // ------------------------------------------------
 
       await Content.findByIdAndDelete(
         req.params.id

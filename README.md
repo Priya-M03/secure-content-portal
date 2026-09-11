@@ -1,32 +1,84 @@
 # Secure Content Portal
 
-A full-stack content portal for organizational training/reference content with ADMIN and VIEWER roles.
+A full-stack secure content portal for organizational training and reference materials.
 
-## Stack
-- Frontend: React + Vite + TypeScript
-- Backend: Node.js + Express + TypeScript
-- Database: MongoDB
-- Authentication: Google OAuth / secure cookie session
-- Storage: cloud object storage (production adapter to be configured)
-- PDF: PDF.js/react-pdf
-- Video: protected streaming endpoint
+The application supports two roles:
 
-## Core requirements
-- Google OAuth only
-- New users default to VIEWER
-- ADMIN access enforced server-side
-- Admin upload/edit/delete for VIDEO/PDF/HTML
-- Viewer read-only experience
-- No permanent public file URLs
-- Input/file validation
-- Responsive UI
-- Free-tier deployment ready
-- No secrets committed
+- **Admin** – upload, edit, and delete content.
+- **Viewer** – browse and securely view available content.
 
-## Development
-See `frontend/.env.example` and `backend/.env.example`.
+Supported content types:
 
-> This starter intentionally keeps cloud credentials out of source control. Configure a real storage provider before production deployment.
+- Video (`MP4`, `WebM`, `OGG`)
+- PDF
+- HTML
 
-## Security trade-offs
-Content displayed in a browser cannot be made impossible to screenshot or capture. The application focuses on preventing trivial access to permanent raw-file URLs using authenticated, short-lived access and protected server routes.
+---
+
+## Features
+
+### Authentication
+
+- Google OAuth is the only login method.
+- New users are created as Viewer by default.
+- Admin access is controlled server-side using configured admin email addresses.
+- Authentication uses secure HTTP-only session cookies.
+- Authentication tokens are not stored in `localStorage`.
+
+### Admin
+
+Admins can:
+
+- Upload videos, PDFs, and HTML files.
+- Add title, description, category, and tag.
+- Edit content metadata.
+- Delete content.
+- View uploaded content.
+
+### Viewer
+
+Viewers can:
+
+- Browse available content.
+- Search/view content through the application.
+- Watch videos inline.
+- Read PDFs using PDF.js.
+- View HTML content inside a sandboxed iframe.
+- Access content only through authenticated application routes.
+
+Viewers do not have access to upload, edit, or delete controls.
+
+---
+
+## Content Protection
+
+Uploaded files are **not stored as public files in the application**.
+
+The application uses a private Supabase Storage bucket.
+
+The flow is:
+
+```text
+User
+  |
+  v
+React Frontend
+  |
+  | Authenticated request
+  v
+Express Backend
+  |
+  | Verify session + permissions
+  v
+MongoDB
+  |
+  | Find content metadata
+  v
+Private Supabase Storage
+  |
+  | Short-lived signed access
+  v
+Backend Proxy
+  |
+  v
+Viewer
