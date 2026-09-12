@@ -35,20 +35,22 @@ app.use(express.urlencoded({ extended: true }));
 // Session
 // --------------------------------------------------
 
+const isProduction = process.env.NODE_ENV === "production";
+
 app.use(
   session({
     secret: env.sessionSecret,
+
     resave: false,
+
     saveUninitialized: false,
 
     cookie: {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
 
-      sameSite:
-        process.env.NODE_ENV === "production"
-          ? "none"
-          : "lax",
+      secure: isProduction,
+
+      sameSite: isProduction ? "none" : "lax",
 
       maxAge: 1000 * 60 * 60 * 8,
     },
@@ -90,7 +92,7 @@ app.use(
     res: express.Response,
     _next: express.NextFunction
   ) => {
-    console.error(err);
+    console.error("Server error:", err);
 
     res.status(500).json({
       message: "Internal server error",
@@ -110,6 +112,6 @@ mongoose
     });
   })
   .catch((err) => {
-    console.error("MongoDB connection failed", err);
+    console.error("MongoDB connection failed:", err);
     process.exit(1);
   });

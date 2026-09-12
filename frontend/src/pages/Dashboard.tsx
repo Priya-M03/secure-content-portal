@@ -43,10 +43,35 @@ function Dashboard() {
 
       const response = await api.get("/content");
 
-      setContents(response.data);
-    } catch (err) {
-      console.error(err);
-      setError("Unable to load content.");
+      console.log("Content API response:", response.data);
+
+      // Backend may return:
+      // 1. an array directly
+      // 2. { contents: [...] }
+      // 3. { data: [...] }
+      // 4. another object when an error occurs
+
+      if (Array.isArray(response.data)) {
+        setContents(response.data);
+      } else if (Array.isArray(response.data?.contents)) {
+        setContents(response.data.contents);
+      } else if (Array.isArray(response.data?.data)) {
+        setContents(response.data.data);
+      } else {
+        setContents([]);
+        setError(
+          response.data?.message || "Unable to load content."
+        );
+      }
+    } catch (err: any) {
+      console.error("Content loading error:", err);
+
+      setContents([]);
+
+      setError(
+        err?.response?.data?.message ||
+          "Unable to load content."
+      );
     } finally {
       setLoading(false);
     }
@@ -94,7 +119,7 @@ function Dashboard() {
 
       await loadContent();
     } catch (err: any) {
-      console.error(err);
+      console.error("Upload error:", err);
 
       setUploadError(
         err?.response?.data?.message ||
@@ -119,6 +144,8 @@ function Dashboard() {
 
       await loadContent();
     } catch (err: any) {
+      console.error("Delete error:", err);
+
       alert(
         err?.response?.data?.message ||
           "Unable to delete content."
@@ -481,8 +508,6 @@ function Dashboard() {
                     </div>
 
                     <div className="content-card-actions">
-
-                      {/* UPDATED VIEW BUTTON */}
 
                       <button
                         className="open-content"

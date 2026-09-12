@@ -62,12 +62,18 @@ export default function Login() {
     );
   }
 
-  const api =
-    import.meta.env.VITE_API_URL ||
-    "http://localhost:5000/api";
+  /*
+    Google OAuth
 
+    IMPORTANT:
+    Backend route is:
+    /api/auth/google
+
+    So we use the complete URL directly.
+  */
   const handleGoogleLogin = () => {
-    window.location.href = `${api}/auth/google`;
+    window.location.href =
+      "http://localhost:5000/api/auth/google";
   };
 
   return (
@@ -160,7 +166,7 @@ export default function Login() {
         </div>
 
         {/* =========================================
-            INTERACTIVE SECURITY GRAPHIC
+            SECURITY GRAPHIC
         ========================================= */}
 
         <div className="security-visual">
@@ -282,12 +288,10 @@ export default function Login() {
             >
 
               <div className="workspace-icon">
-
                 <Crown
                   size={22}
                   strokeWidth={1.8}
                 />
-
               </div>
 
               <div className="workspace-info">
@@ -414,7 +418,7 @@ export default function Login() {
 
                 <path
                   fill="#EA4335"
-                  d="M12 6.37c1.43 0 2.71.49 3.72 1.45l2.79-2.79C16.84 3.47 14.63 2.5 12 2.5a9.75 9.75 0 0 0-8.7 5.38l3.24 2.52C7.31 8.09 9.46 6.37 12 6.37Z"
+                  d="M12 6.37c1.43 0 2.71.49 3.72 1.45l2.79-2.79C16.84 3.47 14.63 2.5 12 2.5a9.75 9.75 0 0 0-8.7 5.38l3.24 2.52c1.01-2.01 3.16-3.73 5.7-3.73Z"
                 />
 
               </svg>
