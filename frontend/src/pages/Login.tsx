@@ -71,9 +71,10 @@ export default function Login() {
 
     So we use the complete URL directly.
   */
- const handleGoogleLogin = () => {
-  window.location.href = `${import.meta.env.VITE_API_URL}/auth/google`;
-};
+  const handleGoogleLogin = () => {
+    window.location.href =
+      "http://localhost:5000/api/auth/google";
+  };
 
   return (
     <main className="premium-login">
