@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import passport from "../config/passport";
+import { env } from "../config/env";
 
 const router = Router();
 
@@ -22,8 +23,7 @@ router.get(
     failureRedirect: "/api/auth/login-failed",
   }),
   (_req: Request, res: Response) => {
-    const clientUrl =
-      process.env.CLIENT_URL || "http://localhost:5176";
+    const clientUrl = env.clientUrl;
 
     res.redirect(clientUrl);
   }

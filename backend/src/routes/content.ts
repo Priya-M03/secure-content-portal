@@ -10,6 +10,7 @@ import { Readable } from "stream";
 
 import Content from "../models/Content";
 import { supabase } from "../supabase";
+import { env } from "../config/env";
 
 const router = Router();
 
@@ -155,10 +156,10 @@ router.get(
 
       res.removeHeader("X-Frame-Options");
 
-      res.setHeader(
-        "Content-Security-Policy",
-        "frame-ancestors http://localhost:5176"
-      );
+    res.setHeader(
+     "Content-Security-Policy",
+     `frame-ancestors ${env.clientUrl}`
+    );
 
       // ------------------------------------------------
       // Create a short-lived signed URL
