@@ -67,7 +67,7 @@ function ContentViewer() {
   }, [id]);
 
   const viewerUrl =
-    `http://localhost:5000/api/content/view/${id}`;
+  `${import.meta.env.VITE_API_URL}/content/view/${id}`;
 
   /*
    * PDF.js viewer
