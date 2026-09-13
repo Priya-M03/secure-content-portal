@@ -36,23 +36,17 @@ app.use(express.urlencoded({ extended: true }));
 // Session
 // --------------------------------------------------
 
-const isProduction = process.env.NODE_ENV === "production";
+const isProduction = env.clientUrl.startsWith("https://");
 
 app.use(
   session({
     secret: env.sessionSecret,
-
     resave: false,
-
     saveUninitialized: false,
-
     cookie: {
       httpOnly: true,
-
       secure: isProduction,
-
       sameSite: isProduction ? "none" : "lax",
-
       maxAge: 1000 * 60 * 60 * 8,
     },
   })
