@@ -10,6 +10,7 @@ import authRoutes from "./routes/auth";
 import contentRoutes from "./routes/content";
 
 const app = express();
+app.set("trust proxy", 1);
 
 // --------------------------------------------------
 // Security
